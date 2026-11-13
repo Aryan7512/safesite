@@ -1,0 +1,20 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": [
+      "node"
+    ],
+    "noEmit": true,
+    "allowImportingTsExtensions": true
+  },
+  "include": [
+    "scripts/**/*.ts",
+    "tests/**/*.ts",
+    "src/domain/**/*.ts",
+    "supabase/functions/_shared/guard.ts",
+    "supabase/functions/_shared/schema.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}
