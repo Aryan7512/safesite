@@ -65,9 +65,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     refreshMe: async () => {
       if (session) setMe(await loadProfile(session.user.id));
     },
-    signIn: async (email, password) => {
-      const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-      if (error) return error.message;
+    signIn: async (identifier, password) => {
+      let loginId = identifier.trim();
+      if (!loginId.includes('@')) {
+        // Mobile number → the account's sign-in id (the PIN is still checked by Supabase Auth).
+        const { data: id, error: lookupError } = await supabase.rpc('login_id_for_phone', { p_phone: loginId });
+        if (lookupError) return lookupError.message;
+        if (!id) return 'Unknown mobile number';
+        loginId = id as string;
+      }
+      const { data, error } = await supabase.auth.signInWithPassword({ email: loginId, password });
+      if (error) return 'Wrong PIN';
       setSession(data.session);
       setMe(await loadProfile(data.user.id));
       return null;

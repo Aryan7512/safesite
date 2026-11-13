@@ -5,7 +5,7 @@
 
 import type { Severity } from '@/domain/types';
 
-export type ThemeName = 'control' | 'daylight';
+export type ThemeName = 'plant' | 'control' | 'daylight';
 
 export interface Palette {
   name: ThemeName;
@@ -125,7 +125,51 @@ export const daylight: Palette = {
   series: ['#0B4FB3', '#B45309', '#15803D', '#6B21A8', '#BE185D', '#0F766E', '#A16207', '#475569'],
 };
 
-export const PALETTES: Record<ThemeName, Palette> = { control, daylight };
+/**
+ * "Plant control screen" (default): modelled on process-plant operator displays
+ * (ISA-101): calm grey canvas, graphite ink, colour only where something needs
+ * attention. Light, so it survives projectors and daylight.
+ */
+export const plant: Palette = {
+  name: 'plant',
+  bg: '#E4E7EA',
+  surface: '#FBFBFC',
+  raised: '#F1F3F5',
+  sunken: '#EDEFF1',
+  border: '#C5CBD1',
+  borderStrong: '#9AA4AD',
+  borderWidth: 1,
+  text: '#1C2228',
+  textDim: '#59646E',
+  textFaint: '#6F7A84',
+  accent: '#2D5B88',
+  accentText: '#FFFFFF',
+  accentSoft: '#E3ECF5',
+  high: '#D0202B',
+  medium: '#D9780A',
+  low: '#EFC01A',
+  clear: '#237A4B',
+  onHigh: '#FFFFFF',
+  onMedium: '#1C1000',
+  onLow: '#1C2228',
+  onClear: '#FFFFFF',
+  highSoft: '#FBE3E4',
+  mediumSoft: '#FCEFD9',
+  lowSoft: '#FBF4D2',
+  clearSoft: '#E1F1E7',
+  escalated: '#6B3FA0',
+  escalatedSoft: '#EFE7F8',
+  danger: '#B4161F',
+  success: '#237A4B',
+  overlay: 'rgba(20, 28, 36, 0.55)',
+  zoneNone: '#FBFBFC',
+  plantLine: '#8E979F',
+  shadow: 'rgba(20, 30, 40, 0.14)',
+  statusBar: 'dark',
+  series: ['#2D5B88', '#D9780A', '#237A4B', '#6B3FA0', '#C0457A', '#1F8A8A', '#9A7400', '#59646E'],
+};
+
+export const PALETTES: Record<ThemeName, Palette> = { plant, control, daylight };
 
 export function severityColors(p: Palette, s: Severity | 'none' | null) {
   switch (s) {

@@ -64,10 +64,26 @@ export default function Submitted() {
               <T v="body">{t('submitted.classifying')}</T>
             </Row>
           ) : r.category ? (
-            <Row gap={space.md} wrap>
-              <SeverityBadge severity={r.severity} size="lg" />
-              <CategoryLabel category={r.category} v="h3" />
-            </Row>
+            <View style={{ gap: space.sm }}>
+              <Row gap={space.md} wrap>
+                <SeverityBadge severity={r.severity} size="lg" />
+                <CategoryLabel category={r.category} v="h3" />
+              </Row>
+              {r.title ? <T v="h2">{r.title}</T> : null}
+              {r.summary ? (
+                <T v="body" color="dim">
+                  {r.summary}
+                </T>
+              ) : null}
+              {r.vision_summary ? (
+                <Row gap={space.sm} align="flex-start">
+                  <Icon name="image-search-outline" size={18} color={p.textDim} />
+                  <T v="small" color="dim" style={{ flex: 1 }}>
+                    Photo: {r.vision_summary}
+                  </T>
+                </Row>
+              ) : null}
+            </View>
           ) : (
             <Row gap={space.md}>
               <Icon name="account-check-outline" color={p.textDim} />

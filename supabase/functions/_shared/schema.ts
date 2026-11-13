@@ -26,10 +26,13 @@ export const CLASSIFICATION_SCHEMA = {
     category: { type: 'string', enum: [...CATEGORIES] },
     severity: { type: 'string', enum: [...SEVERITIES] },
     confidence: { type: 'number' },
+    title: { type: 'string' },
     summary: { type: 'string' },
+    recommended_action: { type: 'string' },
+    transcript_en: { type: 'string' },
     language: { type: 'string', enum: [...LANGUAGES] },
   },
-  required: ['category', 'severity', 'confidence', 'summary', 'language'],
+  required: ['category', 'severity', 'confidence', 'title', 'summary', 'recommended_action', 'transcript_en', 'language'],
   additionalProperties: false,
 } as const;
 
@@ -38,6 +41,9 @@ export interface Classification {
   severity: Severity;
   confidence: number;
   summary: string;
+  title: string;
+  recommended_action: string;
+  transcript_en: string;
   language: (typeof LANGUAGES)[number] | null;
   /** True when anything had to be coerced: sets needs_review. */
   invalid: boolean;
@@ -77,5 +83,30 @@ export function validateClassification(raw: unknown): Classification {
     ? (o.language as (typeof LANGUAGES)[number])
     : null;
 
-  return { category, severity, confidence, summary, language, invalid: problems.length > 0, problems };
+  const str = (v: unknown, max: number) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) : '');
+  const title = str(o.title, 80) || summary.slice(0, 80);
+  const recommended_action = str(o.recommended_action, 280);
+  const transcript_en = str(o.transcript_en, 1000);
+
+  return { category, severity, confidence, summary, title, recommended_action, transcript_en, language, invalid: problems.length > 0, problems };
+}
+
+/** Photo analysis from the vision model. Never throws; unusable output returns null. */
+export interface VisionFinding {
+  hazard_visible: boolean;
+  description: string;
+  category: Category | null;
+  severity: Severity | null;
+  recommended_action: string;
+}
+export function validateVision(raw: unknown): VisionFinding | null {
+  const o = (raw && typeof raw === 'object' ? raw : null) as Record<string, unknown> | null;
+  if (!o) return null;
+  const description = typeof o.description === 'string' ? o.description.replace(/\s+/g, ' ').trim().slice(0, 380) : '';
+  if (!description) return null;
+  const hazard_visible = o.hazard_visible === true || o.hazard_visible === 'true';
+  const category = CATEGORIES.includes(o.category as Category) ? (o.category as Category) : null;
+  const severity = hazard_visible && SEVERITIES.includes(o.severity as Severity) ? (o.severity as Severity) : null;
+  const recommended_action = typeof o.recommended_action === 'string' ? o.recommended_action.replace(/\s+/g, ' ').trim().slice(0, 280) : '';
+  return { hazard_visible, description, category, severity, recommended_action };
 }

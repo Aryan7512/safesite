@@ -26,6 +26,7 @@ export type DuplicateStatus = 'suggested' | 'merged' | 'dismissed';
 export interface UserRow {
   id: string;
   email: string;
+  phone: string | null;
   name: string;
   role: Role;
   is_contractor: boolean;
@@ -69,6 +70,12 @@ export interface ReportRow {
   ai_model: string | null;
   ai_error: string | null;
   summary: string | null;
+  title: string | null;
+  recommended_action: string | null;
+  transcript_en: string | null;
+  vision_summary: string | null;
+  vision_severity: Severity | null;
+  vision_model: string | null;
   guard_reason: string | null;
   category: Category | null;
   severity: Severity | null;

@@ -6,19 +6,20 @@ import { useTheme } from '@/theme/ThemeProvider';
 
 type Variant = 'display' | 'h1' | 'h2' | 'h3' | 'body' | 'bodyLg' | 'small' | 'label' | 'micro' | 'mono' | 'monoLg' | 'kpi';
 
-const SIZES: Record<Variant, { size: number; line: number; weight: Weight; mono?: boolean; upper?: boolean; track?: number }> = {
-  display: { size: 34, line: 40, weight: 'bold' },
-  h1: { size: 26, line: 32, weight: 'bold' },
-  h2: { size: 20, line: 26, weight: 'semibold' },
-  h3: { size: 16, line: 22, weight: 'semibold' },
+// Variants flagged `cond` use the semi-condensed cut (headings and big numbers).
+const SIZES: Record<Variant, { size: number; line: number; weight: Weight; mono?: boolean; cond?: boolean; upper?: boolean; track?: number }> = {
+  display: { size: 38, line: 42, weight: 'semibold', cond: true },
+  h1: { size: 30, line: 34, weight: 'semibold', cond: true },
+  h2: { size: 22, line: 27, weight: 'semibold', cond: true },
+  h3: { size: 17, line: 22, weight: 'semibold' },
   bodyLg: { size: 18, line: 26, weight: 'regular' },
   body: { size: 15, line: 22, weight: 'regular' },
   small: { size: 13, line: 18, weight: 'regular' },
-  label: { size: 12, line: 16, weight: 'semibold', upper: true, track: 0.8 },
+  label: { size: 14, line: 18, weight: 'semibold' },
   micro: { size: 11, line: 14, weight: 'medium' },
   mono: { size: 13, line: 18, weight: 'medium', mono: true },
   monoLg: { size: 20, line: 26, weight: 'semibold', mono: true },
-  kpi: { size: 34, line: 40, weight: 'semibold', mono: true },
+  kpi: { size: 44, line: 46, weight: 'semibold', cond: true },
 };
 
 export interface TProps extends TextProps {
@@ -49,7 +50,7 @@ export function T({ v = 'body', color = 'text', weight, center, style, children,
     escalated: p.escalated,
   };
   const s: TextStyle = {
-    fontFamily: spec.mono ? (spec.weight === 'semibold' ? MONO.semibold : MONO.medium) : fontFor(weight ?? spec.weight, hindi),
+    fontFamily: spec.mono ? (spec.weight === 'semibold' ? MONO.semibold : MONO.medium) : fontFor(weight ?? spec.weight, hindi, spec.cond),
     fontSize: spec.size,
     lineHeight: line,
     color: colors[color] ?? color,

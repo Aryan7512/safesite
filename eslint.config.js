@@ -7,7 +7,7 @@ module.exports = defineConfig([
   expoConfig,
   {
     // Edge Functions run on Deno (npm: specifiers) and are checked with `deno check`.
-    ignores: ['dist/*', 'supabase/functions/**', 'qr/**'],
+    ignores: ['dist/*', 'supabase/functions/**', 'qr/**', 'brag-output*/**'],
   },
   {
     files: ['scripts/**', 'tests/**', '*.config.*'],

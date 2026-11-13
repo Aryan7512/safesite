@@ -7,7 +7,7 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { defaultDueAt, formatDuration, HOUR } from '@/domain/sla';
 import { CATEGORIES, SEVERITIES, type Category, type Item, type Severity } from '@/domain/types';
-import { api } from '@/lib/api';
+import { api, assistant } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { compressPhoto, upload } from '@/lib/media';
 import { qk, useNow, useSettings, useUsers } from '@/lib/queries';
@@ -265,7 +265,16 @@ function CloseBody({ item, onClose }: { item: Item; onClose: () => void }) {
   const [note, setNote] = useState('');
   const [photo, setPhoto] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [drafting, setDrafting] = useState(false);
   const r = item.report;
+
+  async function draft() {
+    setDrafting(true);
+    const res = await assistant.draftNote(r.id);
+    setDrafting(false);
+    if (res.ok && res.note) setNote(res.note);
+    else toast({ tone: 'error', title: 'Could not draft a note', body: res.error ?? 'Write it yourself for now.' });
+  }
 
   async function pick(camera: boolean) {
     try {
@@ -318,6 +327,12 @@ function CloseBody({ item, onClose }: { item: Item; onClose: () => void }) {
         style={{ minHeight: 110 }}
         placeholder="What was fixed, and how was it checked?"
       />
+      <Row gap={space.sm} wrap>
+        <Button label={drafting ? 'Drafting…' : 'Draft with AI'} icon="creation" size="sm" variant="secondary" loading={drafting} onPress={draft} />
+        <T v="small" color="faint" style={{ flex: 1 }}>
+          The draft is a starting point. Read it and edit it: it is sent to the worker as written.
+        </T>
+      </Row>
       <View style={{ gap: space.sm }}>
         <T v="label" color="dim">
           Fix photo (optional)

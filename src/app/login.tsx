@@ -16,10 +16,10 @@ import { Card, Row } from '@/ui/Layout';
 import { Segmented } from '@/ui/Segmented';
 import { T } from '@/ui/Text';
 
-const DEMO: { email: string; key: 'demoWorker' | 'demoSupervisor' | 'demoEhs'; name: string; icon: IconName }[] = [
-  { email: 'worker@safesite.test', key: 'demoWorker', name: 'Ravi Kumar', icon: 'hard-hat' },
-  { email: 'supervisor@safesite.test', key: 'demoSupervisor', name: 'Priya Nair', icon: 'clipboard-account-outline' },
-  { email: 'ehs@safesite.test', key: 'demoEhs', name: 'Anil Deshmukh', icon: 'shield-account-outline' },
+const DEMO: { phone: string; key: 'demoWorker' | 'demoSupervisor' | 'demoEhs'; name: string; icon: IconName }[] = [
+  { phone: '9000000001', key: 'demoWorker', name: 'Ravi Kumar', icon: 'hard-hat' },
+  { phone: '9000000002', key: 'demoSupervisor', name: 'Priya Nair', icon: 'clipboard-account-outline' },
+  { phone: '9000000003', key: 'demoEhs', name: 'Anil Deshmukh', icon: 'shield-account-outline' },
 ];
 
 export default function Login() {
@@ -27,8 +27,8 @@ export default function Login() {
   const { p, name, setTheme } = useTheme();
   const lang = useLang();
   const { signIn } = useAuth();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [phone, setPhone] = useState('');
+  const [pin, setPin] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -62,7 +62,7 @@ export default function Login() {
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel={t('common.theme')}
-                  onPress={() => setTheme(name === 'control' ? 'daylight' : 'control')}
+                  onPress={() => setTheme(name === 'control' ? 'plant' : 'control')}
                   style={[styles.iconBtn, { borderColor: p.border, borderWidth: p.borderWidth }]}
                 >
                   <Icon name={name === 'control' ? 'white-balance-sunny' : 'weather-night'} color={p.textDim} />
@@ -84,10 +84,10 @@ export default function Login() {
                 </T>
                 {DEMO.map((d) => (
                   <Pressable
-                    key={d.email}
+                    key={d.phone}
                     accessibilityRole="button"
                     accessibilityLabel={`${t(`login.${d.key}`)} ${d.name}`}
-                    onPress={() => go(d.email, DEMO_PASSWORD)}
+                    onPress={() => go(d.phone, DEMO_PASSWORD)}
                     disabled={!!busy}
                     style={({ pressed }) => [
                       styles.tile,
@@ -103,7 +103,7 @@ export default function Login() {
                         {d.name}
                       </T>
                     </View>
-                    <Icon name={busy === d.email ? 'loading' : 'chevron-right'} color={p.textDim} />
+                    <Icon name={busy === d.phone ? 'loading' : 'chevron-right'} color={p.textDim} />
                   </Pressable>
                 ))}
               </View>
@@ -111,30 +111,39 @@ export default function Login() {
 
             <Card>
               <Field
-                label={t('login.email')}
-                value={email}
-                onChangeText={setEmail}
-                autoCapitalize="none"
-                autoComplete="email"
-                keyboardType="email-address"
-                inputMode="email"
+                label={t('login.phone')}
+                value={phone}
+                onChangeText={(v) => setPhone(v.replace(/\D/g, '').slice(0, 10))}
+                keyboardType="number-pad"
+                inputMode="numeric"
+                autoComplete="tel"
+                textContentType="telephoneNumber"
+                maxLength={10}
+                placeholder="98765 43210"
+                large
+                style={{ fontSize: 24, letterSpacing: 2 }}
               />
               <Field
-                label={t('login.password')}
-                value={password}
-                onChangeText={setPassword}
+                label={t('login.pin')}
+                value={pin}
+                onChangeText={(v) => setPin(v.replace(/\D/g, '').slice(0, 6))}
+                keyboardType="number-pad"
+                inputMode="numeric"
                 secureTextEntry
-                autoComplete="password"
-                onSubmitEditing={() => go(email, password)}
+                maxLength={6}
+                placeholder="••••••"
+                large
+                style={{ fontSize: 24, letterSpacing: 8 }}
+                onSubmitEditing={() => phone.length === 10 && pin.length === 6 && go(phone, pin)}
                 error={error}
               />
               <Button
                 label={t('login.submit')}
-                size="lg"
+                size="xl"
                 full
-                loading={!!busy && busy === email}
-                disabled={!email || !password}
-                onPress={() => go(email, password)}
+                loading={!!busy && busy === phone}
+                disabled={phone.length !== 10 || pin.length !== 6}
+                onPress={() => go(phone, pin)}
               />
             </Card>
 

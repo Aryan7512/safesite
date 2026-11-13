@@ -13,6 +13,7 @@ import { isNetworkError, submitDraft, useOutbox } from '@/features/capture/submi
 import { Photo, useAreaName } from '@/features/worker/chrome';
 import { transcribe } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { useLang } from '@/lib/i18n';
 import { audioMime, upload } from '@/lib/media';
 import { radius, space } from '@/theme/tokens';
 import { useTheme } from '@/theme/ThemeProvider';
@@ -29,6 +30,7 @@ export default function Review() {
   const toast = useToast();
   const { session } = useAuth();
   const uid = session?.user.id ?? '';
+  const lang = useLang();
   const d = useCapture();
   const areaName = useAreaName();
   const enqueue = useOutbox((s) => s.enqueue);
@@ -51,7 +53,7 @@ export default function Review() {
         const { ext, type } = audioMime(d.audio!.uri);
         const path = await upload(`${uid}/${d.clientId}/voice.${ext}`, d.audio!.uri, type);
         d.set({ audioPath: path });
-        const r = await transcribe(path);
+        const r = await transcribe(path, lang);
         const cur = useCapture.getState();
         if (r.ok && r.text) {
           // Don't overwrite anything the worker already typed.

@@ -43,7 +43,7 @@ async function main() {
       }
       // Profile row (trigger creates it on insert; keep it in sync on re-runs)
       const { error: pe } = await sb.from('users').upsert({
-        id: ids[u.email], email: u.email, name: u.name, role: u.role, is_contractor: u.is_contractor, language: u.language,
+        id: ids[u.email], email: u.email, name: u.name, role: u.role, is_contractor: u.is_contractor, language: u.language, phone: u.phone,
         induction_completed_at: u.induction_done ? new Date().toISOString() : null,
       });
       if (pe) throw pe;
@@ -74,7 +74,7 @@ async function main() {
   const { data, error } = await sb.rpc('reset_demo');
   if (error) throw error;
   console.log(`  reset_demo ✓ ${JSON.stringify(data)}`);
-  if (!resetOnly) console.log(`\nDemo password for all accounts: ${DEMO_PASSWORD}`);
+  if (!resetOnly) console.log(`\nDemo PIN for all accounts: ${DEMO_PASSWORD} (sign in with the mobile numbers in scripts/seed-data.ts)`);
 }
 
 main().catch((e) => {

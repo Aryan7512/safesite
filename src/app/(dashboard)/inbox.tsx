@@ -1,23 +1,37 @@
-// Inbox (PRD §5.2): new reports filtered by shift, area, severity and flags.
-// Row actions: accept, reclassify, assign (owner + SLA due date), merge duplicate.
-import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
-import { ago } from '@/domain/sla';
+// Inbox: every report that needs a person, as a table you can scan. One compact
+// bar for tabs, search and filters; severity by marker and edge colour; the row
+// says what it is, what is wrong with it, who has it and when it is due.
+import { useMemo, useState, type ReactNode } from 'react';
+import { Pressable, ScrollView, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
+import { isBreached } from '@/domain/metrics';
+import { ago, countdownText } from '@/domain/sla';
 import { reportLabel, SEVERITIES, type Item, type Severity } from '@/domain/types';
 import { AssignDialog, ReclassifyDialog, useAct } from '@/features/dashboard/dialogs';
 import { useDash, WIDE } from '@/features/dashboard/store';
+import { SevMark, Tag, SEV_RANK, useSevColor } from '@/features/dashboard/widgets';
 import { api } from '@/lib/api';
-import { useAreas, useItems, useNow, useSettings } from '@/lib/queries';
+import { useAreas, useItems, useNow, useSettings, useUserName } from '@/lib/queries';
+import { fontFor } from '@/theme/fonts';
 import { radius, space } from '@/theme/tokens';
 import { useTheme } from '@/theme/ThemeProvider';
-import { CategoryLabel, Flag, ordinal, SeverityBadge, StatusChip } from '@/ui/Badges';
+import { ordinal } from '@/ui/Badges';
 import { Button } from '@/ui/Button';
-import { Empty, Row } from '@/ui/Layout';
-import { Segmented } from '@/ui/Segmented';
+import { Icon } from '@/ui/Icon';
+import { Empty } from '@/ui/Layout';
 import { T } from '@/ui/Text';
 
-type Scope = 'new' | 'open' | 'all';
-type FlagFilter = 'any' | 'review' | 'duplicate' | 'repeat' | 'guard';
+type Scope = 'new' | 'open' | 'closed' | 'all';
+type FlagFilter = 'any' | 'review' | 'duplicate' | 'repeat' | 'guard' | 'overdue' | 'escalated';
+
+const FLAGS: { value: FlagFilter; label: string }[] = [
+  { value: 'any', label: 'Any' },
+  { value: 'overdue', label: 'Overdue' },
+  { value: 'escalated', label: 'Escalated' },
+  { value: 'review', label: 'Needs review' },
+  { value: 'duplicate', label: 'Possible duplicate' },
+  { value: 'repeat', label: 'Repeat' },
+  { value: 'guard', label: 'Keyword guard' },
+];
 
 export default function Inbox() {
   const { p } = useTheme();
@@ -26,21 +40,37 @@ export default function Inbox() {
   const { items } = useItems();
   const { data: areas } = useAreas();
   const now = useNow(30_000);
+  const userName = useUserName();
   const { shift, setShift } = useDash();
   const [scope, setScope] = useState<Scope>('new');
+  const [query, setQuery] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
   const [area, setArea] = useState<number | 'all'>('all');
   const [sev, setSev] = useState<Severity | 'all' | 'none'>('all');
   const [flag, setFlag] = useState<FlagFilter>('any');
   const [reclass, setReclass] = useState<Item | null>(null);
   const [assign, setAssign] = useState<Item | null>(null);
 
+  const live = useMemo(() => items.filter((i) => i.action.merged_into == null), [items]);
+  const counts = {
+    new: live.filter((i) => i.action.status === 'New').length,
+    open: live.filter((i) => i.action.status !== 'Closed').length,
+    closed: live.filter((i) => i.action.status === 'Closed').length,
+    all: live.length,
+  };
+  const activeFilters = (shift !== 'All' ? 1 : 0) + (area !== 'all' ? 1 : 0) + (sev !== 'all' ? 1 : 0) + (flag !== 'any' ? 1 : 0);
+  const tick = Math.floor(now.getTime() / 30_000);
+
   const rows = useMemo(() => {
-    return items
+    const q = query.trim().toLowerCase();
+    const at = new Date(tick * 30_000);
+    return live
       .filter((i) => {
         const r = i.report;
         const a = i.action;
-        if (scope === 'new' && (a.status !== 'New' || a.merged_into != null)) return false;
+        if (scope === 'new' && a.status !== 'New') return false;
         if (scope === 'open' && a.status === 'Closed') return false;
+        if (scope === 'closed' && a.status !== 'Closed') return false;
         if (shift !== 'All' && r.shift !== shift) return false;
         if (area !== 'all' && r.area_id !== area) return false;
         if (sev === 'none' && r.severity) return false;
@@ -49,84 +79,169 @@ export default function Inbox() {
         if (flag === 'duplicate' && r.duplicate_status !== 'suggested') return false;
         if (flag === 'repeat' && !r.is_repeat) return false;
         if (flag === 'guard' && !r.guard_reason) return false;
+        if (flag === 'overdue' && !isBreached(i, at)) return false;
+        if (flag === 'escalated' && !(a.escalated_level > 0 && a.status !== 'Closed')) return false;
+        if (q) {
+          const hay =
+            `${reportLabel(r.report_no)} ${r.title ?? ''} ${r.summary ?? ''} ${r.transcript} ${r.transcript_en ?? ''} ${r.category ?? ''} ${areas?.find((x) => x.id === r.area_id)?.name ?? ''}`.toLowerCase();
+          if (!hay.includes(q)) return false;
+        }
         return true;
       })
       .sort((a, b) => {
-        // High first, then newest
-        const rank = (i: Item) => (i.report.severity === 'High' ? 0 : i.report.needs_review ? 1 : 2);
-        return rank(a) - rank(b) || new Date(b.report.created_at).getTime() - new Date(a.report.created_at).getTime();
+        if (scope === 'closed') return new Date(b.action.closed_at ?? 0).getTime() - new Date(a.action.closed_at ?? 0).getTime();
+        const urg = (i: Item) => (i.report.severity === 'High' ? 3 : 0) + (isBreached(i, at) ? 2 : 0) + (i.report.needs_review ? 1 : 0);
+        return (
+          urg(b) - urg(a) ||
+          SEV_RANK[b.report.severity ?? 'Medium'] - SEV_RANK[a.report.severity ?? 'Medium'] ||
+          new Date(b.report.created_at).getTime() - new Date(a.report.created_at).getTime()
+        );
       });
-  }, [items, scope, shift, area, sev, flag]);
+  }, [live, scope, shift, area, sev, flag, query, areas, tick]);
+
+  const tabs: { v: Scope; label: string }[] = [
+    { v: 'new', label: 'New' },
+    { v: 'open', label: 'All open' },
+    { v: 'closed', label: 'Closed' },
+    { v: 'all', label: 'Everything' },
+  ];
 
   return (
     <View style={{ flex: 1 }}>
-      <View style={[styles.filters, { borderBottomColor: p.border }]}>
-        <Row wrap gap={space.md}>
-          <Segmented<Scope>
-            label="Scope"
-            value={scope}
-            onChange={setScope}
-            options={[
-              { value: 'new', label: `New · ${items.filter((i) => i.action.status === 'New' && i.action.merged_into == null).length}` },
-              { value: 'open', label: 'All open' },
-              { value: 'all', label: 'All' },
-            ]}
-          />
-          <Segmented
-            label="Shift"
-            value={shift}
-            onChange={setShift}
-            options={[
-              { value: 'All', label: 'All shifts' },
-              { value: 'A', label: 'A' },
-              { value: 'B', label: 'B' },
-              { value: 'C', label: 'C' },
-            ]}
-          />
-          <Segmented<Severity | 'all' | 'none'>
-            label="Severity"
-            value={sev}
-            onChange={setSev}
-            options={[
-              { value: 'all', label: 'Any severity' },
-              ...SEVERITIES.map((s) => ({ value: s, label: s })),
-              { value: 'none', label: 'Unclassified' },
-            ]}
-          />
-          <Segmented<FlagFilter>
-            label="Flag"
-            value={flag}
-            onChange={setFlag}
-            options={[
-              { value: 'any', label: 'Any flag' },
-              { value: 'review', label: 'Needs review' },
-              { value: 'duplicate', label: 'Duplicate' },
-              { value: 'repeat', label: 'Repeat' },
-              { value: 'guard', label: 'Guard' },
-            ]}
-          />
-        </Row>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: space.xs }}>
-          <AreaChip label="All areas" on={area === 'all'} onPress={() => setArea('all')} />
-          {(areas ?? []).map((a) => (
-            <AreaChip key={a.id} label={a.name} on={area === a.id} onPress={() => setArea(a.id)} />
-          ))}
+      <View style={[styles.bar, { backgroundColor: p.surface, borderBottomColor: p.border }]}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: space.xs, alignItems: 'center' }} style={{ flexGrow: 0 }}>
+          {tabs.map((tb) => {
+            const on = tb.v === scope;
+            return (
+              <Pressable
+                key={tb.v}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: on }}
+                onPress={() => setScope(tb.v)}
+                style={[styles.tab, { borderBottomColor: on ? p.text : 'transparent' }]}
+              >
+                <T v="h3" weight={on ? 'bold' : 'medium'} color={on ? 'text' : 'dim'}>
+                  {tb.label}
+                </T>
+                <View style={[styles.tabCount, { backgroundColor: on ? p.text : p.raised }]}>
+                  <T v="small" weight="bold" style={{ color: on ? p.surface : p.textDim }}>
+                    {counts[tb.v]}
+                  </T>
+                </View>
+              </Pressable>
+            );
+          })}
         </ScrollView>
+        <View
+          style={{ flex: 1, flexDirection: 'row', gap: space.sm, justifyContent: 'flex-end', alignItems: 'center', minWidth: 240, paddingVertical: space.sm }}
+        >
+          <View style={[styles.search, { borderColor: p.borderStrong, backgroundColor: p.sunken }]}>
+            <Icon name="magnify" size={20} color={p.textFaint} />
+            <TextInput
+              value={query}
+              onChangeText={setQuery}
+              placeholder="Search reports"
+              placeholderTextColor={p.textFaint}
+              accessibilityLabel="Search reports"
+              style={{ flex: 1, minHeight: 40, color: p.text, fontSize: 15, fontFamily: fontFor('regular', false), outlineStyle: 'none' } as object}
+            />
+            {query ? (
+              <Pressable accessibilityLabel="Clear search" onPress={() => setQuery('')} hitSlop={8}>
+                <Icon name="close-circle" size={18} color={p.textFaint} />
+              </Pressable>
+            ) : null}
+          </View>
+          <Button
+            label={activeFilters ? `Filters · ${activeFilters}` : 'Filters'}
+            icon="tune-variant"
+            size="md"
+            variant={showFilters || activeFilters ? 'primary' : 'secondary'}
+            onPress={() => setShowFilters((v) => !v)}
+          />
+        </View>
       </View>
 
-      <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.sm, paddingBottom: space.xxxl }}>
-        {rows.length === 0 ? <Empty title="Inbox clear" body="No reports match these filters." /> : null}
-        {rows.map((i) => (
-          <InboxRow
-            key={i.report.id}
-            item={i}
-            wide={wide}
-            now={now}
-            areaName={areas?.find((a) => a.id === i.report.area_id)?.name ?? ''}
-            onReclassify={() => setReclass(i)}
-            onAssign={() => setAssign(i)}
-          />
-        ))}
+      {showFilters ? (
+        <View style={[styles.filters, { backgroundColor: p.raised, borderBottomColor: p.border }]}>
+          <FilterGroup label="Severity">
+            <Chip label="Any" on={sev === 'all'} onPress={() => setSev('all')} />
+            {SEVERITIES.map((s) => (
+              <Chip key={s} label={s} on={sev === s} onPress={() => setSev(s)} sev={s} />
+            ))}
+            <Chip label="Unclassified" on={sev === 'none'} onPress={() => setSev('none')} />
+          </FilterGroup>
+          <FilterGroup label="Shift">
+            {(['All', 'A', 'B', 'C'] as const).map((s) => (
+              <Chip key={s} label={s === 'All' ? 'Any' : s} on={shift === s} onPress={() => setShift(s)} />
+            ))}
+          </FilterGroup>
+          <FilterGroup label="Flag">
+            {FLAGS.map((f) => (
+              <Chip key={f.value} label={f.label} on={flag === f.value} onPress={() => setFlag(f.value)} />
+            ))}
+          </FilterGroup>
+          <FilterGroup label="Area">
+            <Chip label="All areas" on={area === 'all'} onPress={() => setArea('all')} />
+            {(areas ?? []).map((a) => (
+              <Chip key={a.id} label={a.name} on={area === a.id} onPress={() => setArea(a.id)} />
+            ))}
+          </FilterGroup>
+          {activeFilters ? (
+            <Button
+              label="Clear filters"
+              size="sm"
+              variant="quiet"
+              onPress={() => {
+                setSev('all');
+                setShift('All');
+                setFlag('any');
+                setArea('all');
+              }}
+            />
+          ) : null}
+        </View>
+      ) : null}
+
+      <ScrollView contentContainerStyle={{ padding: wide ? space.xl : space.md, paddingBottom: space.xxxl }}>
+        <View style={{ maxWidth: 1560, width: '100%', alignSelf: 'center', gap: space.sm }}>
+          {wide && rows.length ? (
+            <View style={[styles.head, { borderBottomColor: p.borderStrong }]}>
+              <View style={{ flex: 3.6 }}>
+                <T v="small" color="dim" weight="semibold" style={{ paddingLeft: 52 }}>
+                  Report
+                </T>
+              </View>
+              <T v="small" color="dim" weight="semibold" style={{ flex: 1.4 }}>
+                Flags
+              </T>
+              <T v="small" color="dim" weight="semibold" style={{ width: 150 }}>
+                Status and owner
+              </T>
+              <T v="small" color="dim" weight="semibold" style={{ width: 96, textAlign: 'right' }}>
+                Due
+              </T>
+              <View style={{ width: 270 }} />
+            </View>
+          ) : null}
+          {rows.length === 0 ? (
+            <Empty
+              title={scope === 'new' ? 'Inbox clear' : 'Nothing matches'}
+              body={scope === 'new' ? 'Every new report has an owner.' : 'Try a different tab or clear the filters.'}
+            />
+          ) : null}
+          {rows.map((i) => (
+            <ReportRow
+              key={i.report.id}
+              item={i}
+              wide={wide}
+              now={now}
+              areaName={areas?.find((a) => a.id === i.report.area_id)?.name ?? ''}
+              owner={userName(i.action.owner_id)}
+              onReclassify={() => setReclass(i)}
+              onAssign={() => setAssign(i)}
+            />
+          ))}
+        </View>
       </ScrollView>
 
       <ReclassifyDialog item={reclass} onClose={() => setReclass(null)} />
@@ -135,25 +250,40 @@ export default function Inbox() {
   );
 }
 
-function AreaChip({ label, on, onPress }: { label: string; on: boolean; onPress: () => void }) {
+function FilterGroup({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <View style={{ gap: 6 }}>
+      <T v="small" color="dim" weight="semibold">
+        {label}
+      </T>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>{children}</View>
+    </View>
+  );
+}
+
+function Chip({ label, on, onPress, sev }: { label: string; on: boolean; onPress: () => void; sev?: Severity }) {
   const { p } = useTheme();
   return (
     <Pressable
+      accessibilityRole="radio"
+      accessibilityState={{ selected: on }}
       onPress={onPress}
-      style={[styles.chip, { backgroundColor: on ? p.accent : p.sunken, borderColor: on ? p.accent : p.border }]}
+      style={[styles.chip, { backgroundColor: on ? p.text : p.surface, borderColor: on ? p.text : p.borderStrong }]}
     >
-      <T v="small" weight="semibold" color={on ? p.accentText : p.textDim}>
+      {sev ? <SevMark severity={sev} size={16} /> : null}
+      <T v="body" weight="semibold" style={{ color: on ? p.surface : p.text }}>
         {label}
       </T>
     </Pressable>
   );
 }
 
-function InboxRow({
+function ReportRow({
   item,
   wide,
   now,
   areaName,
+  owner,
   onReclassify,
   onAssign,
 }: {
@@ -161,38 +291,36 @@ function InboxRow({
   wide: boolean;
   now: Date;
   areaName: string;
+  owner: string;
   onReclassify: () => void;
   onAssign: () => void;
 }) {
   const { p } = useTheme();
+  const sevColor = useSevColor();
   const open = useDash((s) => s.open);
   const settings = useSettings();
   const { items } = useItems();
   const { run, busy } = useAct();
   const { report: r, action: a } = item;
   const parent = r.is_duplicate_of ? items.find((x) => x.report.id === r.is_duplicate_of) : null;
-  const sevColor = r.severity === 'High' ? p.high : r.severity === 'Medium' ? p.medium : r.severity === 'Low' ? p.low : p.borderStrong;
+  const overdue = isBreached(item, now);
+  const cd = countdownText(a, now);
   const fresh = now.getTime() - new Date(r.created_at).getTime() < 5 * 60_000;
+  const edge = r.severity ? sevColor(r.severity) : p.borderStrong;
 
-  const flags = (
-    <Row gap={6} wrap>
-      {r.ai_status === 'pending' ? <Flag icon="progress-clock" label="Processing…" /> : null}
-      {r.ai_status === 'failed' ? <Flag icon="robot-off-outline" label="AI failed · manual triage" tone="warn" /> : null}
-      {r.needs_review && r.ai_status !== 'failed' && a.merged_into == null ? (
-        <Flag icon="eye-check-outline" label="Needs review" tone="warn" />
-      ) : null}
-      {r.guard_reason ? <Flag icon="shield-alert-outline" label={`Guard: ${r.guard_reason}`} tone="danger" /> : null}
-      {r.is_repeat ? <Flag icon="repeat" label={`${ordinal(r.repeat_count)} in ${settings.repeat_window_d} days`} tone="warn" /> : null}
-      {r.duplicate_status === 'suggested' && parent ? (
-        <Flag icon="content-duplicate" label={`Possible duplicate of ${reportLabel(parent.report.report_no)}`} tone="accent" />
-      ) : null}
-      {a.escalated_level ? <Flag icon="arrow-up-bold-circle-outline" label="Escalated" tone="escalated" /> : null}
-    </Row>
-  );
+  const flags: { label: string; tone: 'esc' | 'dup' | 'rev' | 'plain' }[] = [];
+  if (r.ai_status === 'pending') flags.push({ label: 'AI sorting…', tone: 'plain' });
+  if (r.ai_status === 'failed') flags.push({ label: 'AI failed, sort it yourself', tone: 'rev' });
+  if (r.needs_review && r.ai_status !== 'failed') flags.push({ label: 'Check the AI’s category', tone: 'rev' });
+  if (r.vision_severity === 'High') flags.push({ label: 'Photo shows High', tone: 'plain' });
+  if (r.guard_reason) flags.push({ label: `Keyword: ${r.guard_reason}`, tone: 'plain' });
+  if (r.is_repeat) flags.push({ label: `${ordinal(r.repeat_count)} in ${settings.repeat_window_d} days`, tone: 'rev' });
+  if (r.duplicate_status === 'suggested' && parent) flags.push({ label: `Possible duplicate of ${reportLabel(parent.report.report_no)}`, tone: 'dup' });
+  if (a.escalated_level && a.status !== 'Closed') flags.push({ label: 'Escalated to EHS Lead', tone: 'esc' });
 
   const actions = (
-    <Row gap={6} wrap>
-      {a.status === 'New' && a.merged_into == null ? (
+    <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', justifyContent: wide ? 'flex-end' : 'flex-start' }}>
+      {a.status === 'New' ? (
         <>
           {r.needs_review && r.category ? (
             <Button
@@ -217,75 +345,152 @@ function InboxRow({
             />
           ) : null}
         </>
+      ) : a.status === 'Closed' ? (
+        <T v="small" color="clear" weight="semibold">
+          Closed
+        </T>
       ) : (
-        <StatusChip status={a.status} merged={a.merged_into != null} />
+        <Button label="Open" size="sm" variant="secondary" onPress={() => open(r.id)} />
       )}
-    </Row>
+    </View>
   );
 
+  const title = r.title || r.summary || r.transcript || 'New report';
+  const indent = wide ? 0 : 52;
   return (
-    // Row = [open-report button] + [action buttons] as siblings (a button may not contain buttons).
     <View
       style={[
         styles.row,
         {
           backgroundColor: fresh ? p.accentSoft : p.surface,
           borderColor: p.border,
-          borderWidth: p.borderWidth,
-          borderLeftColor: sevColor,
           flexDirection: wide ? 'row' : 'column',
           alignItems: wide ? 'center' : 'stretch',
         },
       ]}
     >
+      <View style={[styles.rowEdge, { backgroundColor: edge }]} />
       <Pressable
         accessibilityRole="button"
-        accessibilityHint="Opens the report"
-        accessibilityLabel={`${reportLabel(r.report_no)} ${r.severity ?? 'Unclassified'} ${r.category ?? ''} ${areaName}`}
+        accessibilityLabel={`${reportLabel(r.report_no)}, ${r.severity ?? 'unclassified'}, ${title}, ${areaName}`}
         onPress={() => open(r.id)}
         style={({ hovered }: { pressed: boolean; hovered?: boolean }) => ({
-          flex: wide ? 1 : undefined,
-          flexDirection: wide ? 'row' : 'column',
-          alignItems: wide ? 'center' : 'stretch',
+          flex: wide ? 3.6 : undefined,
+          flexDirection: 'row',
           gap: space.md,
-          borderRadius: radius.md,
+          alignItems: 'flex-start',
           opacity: hovered ? 0.85 : 1,
         })}
       >
-        <View style={{ width: wide ? 120 : undefined, gap: 2 }}>
-          <T v="mono">{reportLabel(r.report_no)}</T>
-          <T v="micro" color="faint">
-            {ago(r.created_at, now)} · Shift {r.shift}
-          </T>
+        <View style={{ width: 40, alignItems: 'center', paddingTop: 2 }}>
+          <SevMark severity={r.severity} size={30} />
         </View>
-        <View style={{ width: wide ? 120 : undefined, gap: 4 }}>
-          <SeverityBadge severity={r.severity} />
-          {r.ai_confidence != null ? (
-            <T v="micro" color={r.ai_confidence < settings.confidence_threshold ? 'medium' : 'faint'}>
-              AI {Math.round(r.ai_confidence * 100)}%
+        <View style={{ flex: 1, gap: 2 }}>
+          <T v="h3" numberOfLines={2} style={{ lineHeight: 21 }}>
+            {title}
+          </T>
+          <T v="small" color="dim" numberOfLines={2}>
+            {[areaName, r.category, reportLabel(r.report_no), `${ago(r.created_at, now)}, shift ${r.shift}`].filter(Boolean).join(' · ')}
+          </T>
+          {r.recommended_action && a.status !== 'Closed' ? (
+            <T v="small" color="faint" numberOfLines={2}>
+              Suggested: {r.recommended_action}
             </T>
           ) : null}
         </View>
-        <View style={{ flex: wide ? 1 : undefined, gap: 4, minWidth: 0 }}>
-          <Row gap={space.sm} wrap>
-            <CategoryLabel category={r.category} v="body" />
-            <T v="small" color="dim">
-              · {areaName}
-            </T>
-          </Row>
-          <T v="small" color="dim" numberOfLines={2}>
-            {r.summary || r.transcript || '—'}
-          </T>
-          {flags}
-        </View>
       </Pressable>
-      <View style={{ alignItems: wide ? 'flex-end' : 'flex-start', maxWidth: wide ? 360 : undefined }}>{actions}</View>
+
+      <View style={{ flex: wide ? 1.4 : undefined, flexDirection: 'row', flexWrap: 'wrap', gap: 5, paddingLeft: indent, alignItems: 'center' }}>
+        {flags.map((f) => (
+          <Tag key={f.label} {...f} />
+        ))}
+        {r.ai_confidence != null && r.severity ? (
+          <T v="small" color={r.needs_review ? 'medium' : 'faint'}>
+            AI {Math.round(r.ai_confidence * 100)}% sure
+          </T>
+        ) : null}
+      </View>
+
+      {wide ? (
+        <>
+          <View style={{ width: wide ? 150 : undefined, paddingLeft: indent }}>
+            <T v="body" weight="semibold">
+              {a.status === 'New' ? 'Waiting to be assigned' : a.status}
+            </T>
+            <T v="small" color="dim" numberOfLines={1}>
+              {a.owner_id ? (a.status === 'New' ? `Area owner: ${owner}` : owner) : 'No owner yet'}
+            </T>
+          </View>
+
+          <View style={{ width: wide ? 96 : undefined, alignItems: wide ? 'flex-end' : 'flex-start', paddingLeft: indent }}>
+            {a.status === 'Closed' ? (
+              <T v="small" color="faint">
+                {a.closed_at ? ago(a.closed_at, now) : ''}
+              </T>
+            ) : (
+              <>
+                <T v="h3" color={overdue ? 'high' : 'text'}>
+                  {cd.text.replace(/^Due in |^Overdue /, '')}
+                </T>
+                <T v="small" color={overdue ? 'high' : 'faint'}>
+                  {overdue ? 'overdue' : 'left'}
+                </T>
+              </>
+            )}
+          </View>
+        </>
+      ) : (
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: space.md, paddingLeft: indent }}>
+          <View style={{ flex: 1 }}>
+            <T v="body" weight="semibold">
+              {a.status === 'New' ? 'Waiting to be assigned' : a.status}
+            </T>
+            <T v="small" color="dim" numberOfLines={1}>
+              {a.owner_id ? (a.status === 'New' ? `Area owner: ${owner}` : owner) : 'No owner yet'}
+            </T>
+          </View>
+
+          <View style={{ alignItems: 'flex-end' }}>
+            {a.status === 'Closed' ? (
+              <T v="small" color="faint">
+                {a.closed_at ? ago(a.closed_at, now) : ''}
+              </T>
+            ) : (
+              <>
+                <T v="h3" color={overdue ? 'high' : 'text'}>
+                  {cd.text.replace(/^Due in |^Overdue /, '')}
+                </T>
+                <T v="small" color={overdue ? 'high' : 'faint'}>
+                  {overdue ? 'overdue' : 'left'}
+                </T>
+              </>
+            )}
+          </View>
+        </View>
+      )}
+      <View style={{ width: wide ? 270 : undefined, paddingLeft: indent }}>{actions}</View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  filters: { padding: space.lg, paddingBottom: space.md, gap: space.md, borderBottomWidth: 1 },
-  chip: { paddingHorizontal: 12, minHeight: 34, borderRadius: radius.pill, justifyContent: 'center', borderWidth: 1 },
-  row: { gap: space.md, padding: space.md, borderRadius: radius.lg, borderLeftWidth: 5 },
+  bar: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: space.md, paddingHorizontal: space.lg, borderBottomWidth: 1 },
+  tab: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: space.md, minHeight: 52, borderBottomWidth: 3 },
+  tabCount: { minWidth: 24, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 7 },
+  search: {
+    flex: 1,
+    maxWidth: 340,
+    minWidth: 160,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    paddingHorizontal: space.md,
+  },
+  filters: { padding: space.lg, gap: space.md, borderBottomWidth: 1 },
+  chip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, minHeight: 40, borderRadius: radius.pill, borderWidth: 1 },
+  head: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingBottom: 6, paddingHorizontal: space.lg, borderBottomWidth: 1 },
+  row: { position: 'relative', gap: space.md, padding: space.md, paddingLeft: space.lg, borderWidth: 1, borderRadius: 5, overflow: 'hidden' },
+  rowEdge: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 5 },
 });

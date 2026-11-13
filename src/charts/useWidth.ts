@@ -11,5 +11,5 @@ export function useWidth(initial = 0) {
   return { width, onLayout };
 }
 
-/** Font for SVG text: the loaded IBM Plex family (else SVG falls back to a serif). */
-export const SVG_FONT = 'IBMPlexSans_600SemiBold';
+/** Font for SVG text: a loaded family (else SVG falls back to a serif). */
+export const SVG_FONT = 'BarlowSemiCondensed_600SemiBold';

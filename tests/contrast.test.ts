@@ -1,7 +1,7 @@
 // PRD §11: "run a contrast checker". WCAG 2.1 contrast for every text /
 // background pairing the UI uses, in both themes.
 import { describe, expect, it } from 'vitest';
-import { control, daylight, type Palette } from '../src/theme/tokens';
+import { control, daylight, plant, type Palette } from '../src/theme/tokens';
 
 function lum(hex: string) {
   const n = hex.replace('#', '');
@@ -42,8 +42,9 @@ function pairs(p: Palette): [string, string, string, number][] {
 }
 
 describe.each([
-  ['Control room', control],
-  ['Daylight', daylight],
+  ['Plant (default light)', plant],
+  ['Control room (dark)', control],
+  ['Daylight (high contrast)', daylight],
 ])('%s theme contrast', (_name, palette) => {
   it.each(pairs(palette))('%s', (_label, fg, bg, min) => {
     expect(contrast(fg, bg)).toBeGreaterThanOrEqual(min);

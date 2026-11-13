@@ -433,3 +433,6 @@ verify_jwt = true
 # @supabase/server wrapper verifies both, so the gateway check is off.
 [functions.classify]
 verify_jwt = false
+
+[functions.assistant]
+verify_jwt = true

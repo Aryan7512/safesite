@@ -20,14 +20,16 @@
   "login": {
     "title": "Sign in",
     "subtitle": "Hazard and near-miss reporting for Plant X",
-    "email": "Email",
+    "email": "Mobile number",
+    "phone": "Mobile number",
+    "pin": "6-digit PIN",
     "password": "Password",
     "submit": "Sign in",
     "demo": "Demo accounts",
     "demoWorker": "Worker (contractor)",
     "demoSupervisor": "Area Supervisor",
     "demoEhs": "EHS Lead",
-    "failed": "Wrong email or password",
+    "failed": "Wrong mobile number or PIN",
     "noBlame": "Reporting is no-blame. Your report goes only to your area supervisor and the EHS team."
   },
   "capture": {

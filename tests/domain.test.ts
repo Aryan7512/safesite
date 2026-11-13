@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { applyGuard, keywordGuard } from '../supabase/functions/_shared/guard';
 import { validateClassification } from '../supabase/functions/_shared/schema';
 import {
-  applyFilters, areaRisk, buckets, impact, kpis, median, repeatGroups, speedTrend, volumeTrend,
+  applyFilters, areaRisk, attention, buckets, categoryMix, impact, kpis, median, oldestOpen, ownerLoad, plantStatus, repeatGroups, shiftMix,
+  speedBySeverity, speedTrend, timeToAssignMinutes, volumeBySeverity, volumeTrend,
 } from '../src/domain/metrics';
 import { shiftFor } from '../src/domain/shift';
 import { countdownText, formatDuration, slaState } from '../src/domain/sla';
@@ -190,5 +191,51 @@ describe('dashboard metrics (PRD §6)', () => {
     expect(slaState(items[1].action, NOW)).toBe('breached');
     expect(slaState(items[0].action, NOW)).toBe('ok');
     expect(countdownText(items[0].action, NOW)).toEqual({ text: 'Due in 3 h 0 m', overdue: false });
+  });
+});
+
+describe('severity-coded metrics', () => {
+  const f7 = applyFilters(items, { shift: 'All', window: '7d' }, NOW);
+
+  it('volume is split by severity and adds up', () => {
+    const rows = volumeBySeverity(f7, '7d', NOW);
+    const sum = rows.reduce((a, r) => ({ H: a.H + r.sev.High, M: a.M + r.sev.Medium, L: a.L + r.sev.Low }), { H: 0, M: 0, L: 0 });
+    expect(sum).toEqual({ H: 1, M: 3, L: 1 });
+    expect(rows.every((r) => r.total === r.sev.High + r.sev.Medium + r.sev.Low)).toBe(true);
+  });
+
+  it('median close time is per severity', () => {
+    const rows = speedBySeverity(f7, '7d', NOW);
+    expect(rows.reduce((a, r) => a + r.closed, 0)).toBe(3);
+    const low = rows.map((r) => r.median.Low).filter((x): x is number => x != null);
+    expect(low).toEqual([10]);
+    const med = rows.map((r) => r.median.Medium).filter((x): x is number => x != null).sort((a, b) => a - b);
+    expect(med).toEqual([2, 4]);
+  });
+
+  it('shift and category mixes cover every report once', () => {
+    expect(shiftMix(f7).reduce((a, r) => a + r.total, 0)).toBe(5);
+    const cats = categoryMix(f7);
+    expect(cats).toHaveLength(1);
+    expect(cats[0]).toMatchObject({ category: 'Spill / Leak', total: 5 });
+  });
+
+  it('attention list puts the High report first and says why', () => {
+    const a = attention(items, NOW);
+    expect(a).toHaveLength(2);
+    expect(a[0].item.report.severity).toBe('High');
+    expect(a[0].reasons).toEqual(expect.arrayContaining(['high', 'untriaged']));
+    expect(a[1].reasons).toContain('overdue');
+  });
+
+  it('plant status, oldest open, owner load and time to assign', () => {
+    const st = plantStatus(items, areas, NOW);
+    expect(st).toMatchObject({ highCount: 1, highAreas: ['Tank Farm'], overdueCount: 1, openCount: 2 });
+    expect(oldestOpen(items, NOW)?.hours).toBeCloseTo(30);
+    expect(ownerLoad(items, NOW)).toEqual([]);
+    expect(timeToAssignMinutes(f7)).toEqual({ median: null, count: 0 });
+    const assigned = [item({ hoursAgo: 5 }, { assigned_at: iso(4.5), owner_id: 'o1' })];
+    expect(timeToAssignMinutes(assigned).median).toBeCloseTo(30);
+    expect(ownerLoad(assigned, NOW)[0]).toMatchObject({ ownerId: 'o1', open: 1, overdue: 0 });
   });
 });

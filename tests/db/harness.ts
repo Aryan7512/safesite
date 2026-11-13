@@ -99,6 +99,7 @@ export async function createTestDb(opts: { seed?: boolean } = {}): Promise<TestD
       [u.email, { name: u.name, role: u.role, is_contractor: u.is_contractor, language: u.language }],
     );
     ids[u.email] = res.rows[0].id;
+    await db.query(`update public.users set phone = $1 where id = $2`, [u.phone, ids[u.email]]);
     if (u.induction_done) {
       await db.query(`update public.users set induction_completed_at = now() where id = $1`, [ids[u.email]]);
     }

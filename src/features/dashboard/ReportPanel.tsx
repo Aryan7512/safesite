@@ -61,7 +61,12 @@ export function ReportPanel({ item }: { item: Item }) {
             · {area?.name}
           </T>
         </Row>
-        {r.summary ? <T v="bodyLg">{r.summary}</T> : null}
+        {r.title ? (
+          <T v="h1" accessibilityRole="header">
+            {r.title}
+          </T>
+        ) : null}
+        {r.summary ? <T v="bodyLg" color="dim">{r.summary}</T> : null}
         <Row gap={space.sm} wrap>
           {r.needs_review && !merged ? <Flag icon="eye-check-outline" label="Needs review" tone="warn" /> : null}
           {r.guard_reason ? <Flag icon="shield-alert-outline" label={`Keyword guard: ${r.guard_reason}`} tone="danger" /> : null}
@@ -147,6 +152,46 @@ export function ReportPanel({ item }: { item: Item }) {
         </Card>
       ) : null}
 
+      {r.recommended_action && a.status !== 'Closed' ? (
+        <Card accent={p.accent}>
+          <Row gap={space.sm}>
+            <Icon name="lightbulb-on-outline" color={p.accent} />
+            <T v="h3">Suggested next step</T>
+          </Row>
+          <T v="bodyLg">{r.recommended_action}</T>
+          <T v="small" color="faint">
+            Written by AI from the report. You decide what to do.
+          </T>
+        </Card>
+      ) : null}
+
+      {r.vision_summary ? (
+        <Card accent={r.vision_severity ? undefined : p.borderStrong}>
+          <Row between>
+            <Row gap={space.sm}>
+              <Icon name="image-search-outline" color={p.textDim} />
+              <T v="h3">What the photo shows</T>
+            </Row>
+            {r.vision_severity ? (
+              <Row gap={6}>
+                <SeverityBadge severity={r.vision_severity} />
+                <T v="small" color="dim">
+                  by the photo alone
+                </T>
+              </Row>
+            ) : (
+              <T v="small" color="faint">
+                No hazard seen
+              </T>
+            )}
+          </Row>
+          <T v="body">{r.vision_summary}</T>
+          <T v="small" color="faint">
+            Image analysis by {r.vision_model ?? 'a vision model'}. The final severity is the higher of the photo and the description.
+          </T>
+        </Card>
+      ) : null}
+
       {/* AI card */}
       <AiCard item={item} overridden={!!overridden} onRetry={() => run('ai', () => classify(r.id), 'Classification requested')} retrying={busy === 'ai'} />
 
@@ -156,11 +201,21 @@ export function ReportPanel({ item }: { item: Item }) {
           Report
         </T>
         <T v="bodyLg">{r.transcript || '—'}</T>
+        {r.transcript_en && r.transcript_en.trim().toLowerCase() !== (r.transcript ?? '').trim().toLowerCase() ? (
+          <View style={{ gap: 2 }}>
+            <T v="small" color="faint">
+              In English (machine translation)
+            </T>
+            <T v="body" color="dim">
+              {r.transcript_en}
+            </T>
+          </View>
+        ) : null}
         {r.audio_url ? <AudioClip path={r.audio_url} /> : null}
         {r.photo_urls.length ? (
           <Row gap={space.sm} wrap>
             {r.photo_urls.map((ph) => (
-              <Photo key={ph} path={ph} size={132} />
+              <Photo key={ph} path={ph} size={168} />
             ))}
           </Row>
         ) : null}

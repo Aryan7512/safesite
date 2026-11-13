@@ -1,9 +1,5 @@
-import {
-  IBMPlexSans_400Regular,
-  IBMPlexSans_500Medium,
-  IBMPlexSans_600SemiBold,
-  IBMPlexSans_700Bold,
-} from '@expo-google-fonts/ibm-plex-sans';
+import { Barlow_400Regular, Barlow_500Medium, Barlow_600SemiBold, Barlow_700Bold } from '@expo-google-fonts/barlow';
+import { BarlowSemiCondensed_500Medium, BarlowSemiCondensed_600SemiBold, BarlowSemiCondensed_700Bold } from '@expo-google-fonts/barlow-semi-condensed';
 import { IBMPlexMono_500Medium, IBMPlexMono_600SemiBold } from '@expo-google-fonts/ibm-plex-mono';
 import {
   IBMPlexSansDevanagari_400Regular,
@@ -13,10 +9,13 @@ import {
 } from '@expo-google-fonts/ibm-plex-sans-devanagari';
 
 export const FONT_MAP = {
-  IBMPlexSans_400Regular,
-  IBMPlexSans_500Medium,
-  IBMPlexSans_600SemiBold,
-  IBMPlexSans_700Bold,
+  Barlow_400Regular,
+  Barlow_500Medium,
+  Barlow_600SemiBold,
+  Barlow_700Bold,
+  BarlowSemiCondensed_500Medium,
+  BarlowSemiCondensed_600SemiBold,
+  BarlowSemiCondensed_700Bold,
   IBMPlexMono_500Medium,
   IBMPlexMono_600SemiBold,
   IBMPlexSansDevanagari_400Regular,
@@ -28,10 +27,19 @@ export const FONT_MAP = {
 export type Weight = 'regular' | 'medium' | 'semibold' | 'bold';
 
 const LATIN: Record<Weight, string> = {
-  regular: 'IBMPlexSans_400Regular',
-  medium: 'IBMPlexSans_500Medium',
-  semibold: 'IBMPlexSans_600SemiBold',
-  bold: 'IBMPlexSans_700Bold',
+  regular: 'Barlow_400Regular',
+  medium: 'Barlow_500Medium',
+  semibold: 'Barlow_600SemiBold',
+  bold: 'Barlow_700Bold',
+};
+
+// Semi-condensed cut for headings and numbers: drawn from industrial signage,
+// compact enough for dense dashboards.
+const CONDENSED: Record<Weight, string> = {
+  regular: 'BarlowSemiCondensed_500Medium',
+  medium: 'BarlowSemiCondensed_500Medium',
+  semibold: 'BarlowSemiCondensed_600SemiBold',
+  bold: 'BarlowSemiCondensed_700Bold',
 };
 
 // IBM Plex Sans Devanagari also carries Latin glyphs, so Hindi UI uses it for
@@ -43,8 +51,9 @@ const DEVANAGARI: Record<Weight, string> = {
   bold: 'IBMPlexSansDevanagari_700Bold',
 };
 
-export function fontFor(weight: Weight, hindi: boolean) {
-  return hindi ? DEVANAGARI[weight] : LATIN[weight];
+export function fontFor(weight: Weight, hindi: boolean, condensed = false) {
+  if (hindi) return DEVANAGARI[weight];
+  return condensed ? CONDENSED[weight] : LATIN[weight];
 }
 
 export const MONO = { medium: 'IBMPlexMono_500Medium', semibold: 'IBMPlexMono_600SemiBold' };

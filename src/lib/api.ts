@@ -78,9 +78,9 @@ async function invoke<T>(name: string, body: Record<string, unknown>, timeoutMs:
   return Promise.race([call, timeout]);
 }
 
-export async function transcribe(path: string): Promise<TranscribeResult> {
+export async function transcribe(path: string, lang?: 'en' | 'hi'): Promise<TranscribeResult> {
   try {
-    return await invoke<TranscribeResult>('transcribe', { path }, 30_000);
+    return await invoke<TranscribeResult>('transcribe', { path, lang: lang ?? null }, 40_000);
   } catch (e) {
     return { ok: false, error: errorMessage(e) };
   }
@@ -94,3 +94,38 @@ export async function classify(reportId: number) {
     return { ok: false, error: errorMessage(e) };
   }
 }
+
+// ─── Assistant (supervisors and EHS Lead) ───────────────────────────────────
+export interface AssistantProposal {
+  type: 'assign' | 'reclassify' | 'start' | 'close';
+  report_id: number;
+  ref: string;
+  title: string;
+  owner_id?: string;
+  owner_name?: string;
+  category?: Category;
+  severity?: Severity;
+  note?: string;
+  reason: string;
+}
+export interface AssistantReply {
+  ok: boolean;
+  reply?: string;
+  proposals?: AssistantProposal[];
+  bullets?: string[];
+  note?: string;
+  error?: string;
+}
+
+async function assistantCall(body: Record<string, unknown>): Promise<AssistantReply> {
+  try {
+    return await invoke<AssistantReply>('assistant', body, 45_000);
+  } catch (e) {
+    return { ok: false, error: errorMessage(e) };
+  }
+}
+export const assistant = {
+  chat: (messages: { role: 'user' | 'assistant'; content: string }[]) => assistantCall({ mode: 'chat', messages }),
+  briefing: () => assistantCall({ mode: 'briefing' }),
+  draftNote: (reportId: number) => assistantCall({ mode: 'draft_note', report_id: reportId }),
+};

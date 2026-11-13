@@ -13,8 +13,9 @@ export default {
     const started = Date.now();
     const uid = ctx.userClaims?.id;
     let path = '';
+    let lang: string | null = null;
     try {
-      ({ path } = await req.json());
+      ({ path, lang = null } = await req.json());
     } catch {
       return Response.json({ ok: false, error: 'bad request' }, { status: 400 });
     }
@@ -34,7 +35,7 @@ export default {
 
     try {
       const filename = path.split('/').pop() ?? 'voice.m4a';
-      const out = await transcribe(blob, filename);
+      const out = await transcribe(blob, filename, lang === 'hi' || lang === 'en' ? lang : null);
       return Response.json({ ok: true, ...out, ms: Date.now() - started });
     } catch (e) {
       console.error('transcribe failed', String(e));

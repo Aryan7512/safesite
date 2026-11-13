@@ -17,12 +17,12 @@ export function BrandMark({ size = 32 }: { size?: number }) {
   );
 }
 
-export function Brand({ sub }: { sub?: string }) {
+export function Brand({ sub, compactDark }: { sub?: string; compactDark?: boolean }) {
   return (
     <Row gap={10}>
       <BrandMark />
       <View>
-        <T v="h3" weight="bold">
+        <T v="h3" weight="bold" style={compactDark ? { color: '#FFFFFF' } : undefined}>
           SafeSite
         </T>
         {sub ? (

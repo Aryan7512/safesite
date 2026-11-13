@@ -12,15 +12,15 @@ interface ThemeCtx {
   toggle: () => void;
 }
 
-const Ctx = createContext<ThemeCtx>({ p: PALETTES.control, name: 'control', setTheme: () => {}, toggle: () => {} });
+const Ctx = createContext<ThemeCtx>({ p: PALETTES.plant, name: 'plant', setTheme: () => {}, toggle: () => {} });
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [name, setName] = useState<ThemeName>('control');
+  const [name, setName] = useState<ThemeName>('plant');
 
   useEffect(() => {
     AsyncStorage.getItem(KEY)
       .then((v) => {
-        if (v === 'control' || v === 'daylight') setName(v);
+        if (v === 'plant' || v === 'control' || v === 'daylight') setName(v);
       })
       .catch(() => {});
   }, []);
@@ -37,12 +37,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     if (Platform.OS !== 'web' || typeof document === 'undefined') return;
     document.documentElement.style.backgroundColor = p.bg;
     document.body.style.backgroundColor = p.bg;
-    document.documentElement.style.colorScheme = name === 'control' ? 'dark' : 'light';
+    document.documentElement.style.colorScheme = p.statusBar === 'light' ? 'dark' : 'light';
     document.documentElement.dataset.theme = name;
   }, [p, name]);
 
   const value = useMemo(
-    () => ({ p, name, setTheme, toggle: () => setTheme(name === 'control' ? 'daylight' : 'control') }),
+    () => ({ p, name, setTheme, toggle: () => setTheme(name === 'control' ? 'plant' : 'control') }),
     [p, name, setTheme],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

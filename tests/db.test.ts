@@ -421,5 +421,29 @@ describe('demo reset', () => {
     expect(r.n).toBe(70);
     const no = await one(t.db.query<{ n: number }>(`select min(report_no)::int as n from public.reports`));
     expect(no.n).toBe(1);
+    // live report numbers continue after a reset instead of repeating
+    const live = await createLiveReport(W, 'WARE', 'number check after reset');
+    const before = Number(live.label.replace('SS-', ''));
+    await t.as(EHS, (tx) => tx.query(`select public.reset_demo()`));
+    const again = await createLiveReport(W, 'WARE', 'number check after second reset');
+    expect(Number(again.label.replace('SS-', ''))).toBe(before + 1);
+  });
+
+  it('phone number resolves to a sign-in id; unknown or short numbers do not', async () => {
+    const q = (p: string) => t.db.query<{ v: string | null }>(`select public.login_id_for_phone($1) as v`, [p]);
+    expect((await q('+91 90000 00001')).rows[0].v).toBe('worker@safesite.test');
+    expect((await q('9000000002')).rows[0].v).toBe('supervisor@safesite.test');
+    expect((await q('9999999999')).rows[0].v).toBeNull();
+    expect((await q('00001')).rows[0].v).toBeNull();
+  });
+
+  it('stores the photo analysis and report text from the AI', async () => {
+    const x = await createLiveReport(W, 'WARE', 'aag lagi hai drum ke paas');
+    await classify(x.id, { status: 'done', category: 'Fire / Ignition', raw_severity: 'Medium', severity: 'High', confidence: 0.9,
+      summary: 'Fire near drums', title: 'Fire near solvent drums', recommended_action: 'Evacuate and raise the alarm',
+      transcript_en: 'There is a fire near the drum', vision_summary: 'Open flames at the base of a drum', vision_severity: 'High', vision_model: 'qwen/qwen3.8-27b' });
+    const r = await one(t.db.query<any>(`select title, recommended_action, transcript_en, vision_summary, vision_severity from public.reports where id = $1`, [x.id]));
+    expect(r).toEqual({ title: 'Fire near solvent drums', recommended_action: 'Evacuate and raise the alarm', transcript_en: 'There is a fire near the drum',
+      vision_summary: 'Open flames at the base of a drum', vision_severity: 'High' });
   });
 });

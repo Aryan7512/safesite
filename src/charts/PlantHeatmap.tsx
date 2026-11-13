@@ -1,12 +1,19 @@
 // Plant X schematic (fictional site) with clickable zones coloured by the
 // highest open severity (PRD §6): High red, Medium amber, Low yellow, none green.
-// Hand-drawn SVG so it renders identically on the projector and on a phone.
+// Control-room style: dark plan drawing, each zone has a solid severity header
+// and a tinted body, so colour marks risk without flooding the screen.
+import type { ReactNode } from 'react';
 import { Pressable, View } from 'react-native';
-import Svg, { Circle, G, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
+import Svg, { Circle, Defs, G, Line, Path, Pattern, Rect, Text as SvgText } from 'react-native-svg';
 import type { AreaRisk } from '@/domain/metrics';
 import { SEVERITY_GLYPH, severityColors } from '@/theme/tokens';
 import { useTheme } from '@/theme/ThemeProvider';
 import { SVG_FONT, useWidth } from './useWidth';
+
+const VB_W = 1000;
+const VB_H = 600;
+const HEAD = 40; // header band height
+const R = 10; // corner radius
 
 interface Zone {
   id: string;
@@ -15,90 +22,150 @@ interface Zone {
   w: number;
   h: number;
   short: string;
-  decor: (stroke: string) => React.ReactNode;
+  /** Equipment line-art, drawn in the zone's ink colour. */
+  art: (z: Zone, ink: string) => ReactNode;
 }
 
-const VB_W = 1000;
-const VB_H = 640;
+const sw = 2; // art stroke width
 
-// Layout of the fictional site. Decorations hint at what each area is.
 const ZONES: Zone[] = [
   {
-    id: 'zone-tank', x: 40, y: 50, w: 290, h: 220, short: 'Tank Farm',
-    decor: (s) => (
+    id: 'zone-tank', x: 30, y: 36, w: 300, h: 224, short: 'Tank Farm',
+    art: (z, ink) => (
       <G>
-        {[0, 1, 2].map((i) => (
-          <Circle key={i} cx={95 + i * 90} cy={185} r={32} stroke={s} strokeWidth={2} fill="none" />
-        ))}
-        <Path d="M60 245 H310" stroke={s} strokeWidth={2} strokeDasharray="6 6" />
+        {/* bund wall */}
+        <Rect x={z.x + 16} y={z.y + HEAD + 16} width={z.w - 32} height={z.h - HEAD - 58} rx={6} stroke={ink} strokeWidth={1.5} strokeDasharray="7 6" fill="none" opacity={0.7} />
+        {[0, 1, 2].map((i) => {
+          const cx = z.x + 62 + i * 88;
+          const cy = z.y + HEAD + 80;
+          return (
+            <G key={i}>
+              <Circle cx={cx} cy={cy} r={34} stroke={ink} strokeWidth={sw} fill="none" />
+              <Circle cx={cx} cy={cy} r={12} stroke={ink} strokeWidth={1.5} fill="none" opacity={0.7} />
+              <Line x1={cx} y1={cy - 34} x2={cx} y2={cy - 12} stroke={ink} strokeWidth={1.5} opacity={0.7} />
+            </G>
+          );
+        })}
       </G>
     ),
   },
   {
-    id: 'zone-react', x: 360, y: 50, w: 250, h: 220, short: 'Reactor Block',
-    decor: (s) => (
+    id: 'zone-react', x: 350, y: 36, w: 270, h: 224, short: 'Reactor Block',
+    art: (z, ink) => (
       <G>
-        {[0, 1].map((i) => (
+        {[0, 1].map((i) => {
+          const x = z.x + 58 + i * 100;
+          const y = z.y + HEAD + 44;
+          return (
+            <G key={i}>
+              <Rect x={x} y={y} width={56} height={84} rx={26} stroke={ink} strokeWidth={sw} fill="none" />
+              {/* agitator + motor */}
+              <Line x1={x + 28} y1={y - 14} x2={x + 28} y2={y + 56} stroke={ink} strokeWidth={1.5} />
+              <Rect x={x + 18} y={y - 26} width={20} height={12} rx={2} stroke={ink} strokeWidth={1.5} fill="none" />
+              <Line x1={x + 14} y1={y + 56} x2={x + 42} y2={y + 56} stroke={ink} strokeWidth={sw} />
+              {/* legs */}
+              <Line x1={x + 10} y1={y + 78} x2={x + 6} y2={y + 96} stroke={ink} strokeWidth={1.5} />
+              <Line x1={x + 46} y1={y + 78} x2={x + 50} y2={y + 96} stroke={ink} strokeWidth={1.5} />
+            </G>
+          );
+        })}
+      </G>
+    ),
+  },
+  {
+    id: 'zone-dist', x: 640, y: 36, w: 330, h: 224, short: 'Distillation',
+    art: (z, ink) => (
+      <G>
+        {[0, 1, 2].map((i) => {
+          const hgt = [116, 132, 104][i];
+          const x = z.x + 70 + i * 86;
+          const bottom = z.y + z.h - 44;
+          return (
+            <G key={i}>
+              <Rect x={x} y={bottom - hgt} width={30} height={hgt} rx={13} stroke={ink} strokeWidth={sw} fill="none" />
+              {[1, 2, 3, 4].map((k) => (
+                <Line key={k} x1={x + 5} x2={x + 25} y1={bottom - (hgt / 5) * k} y2={bottom - (hgt / 5) * k} stroke={ink} strokeWidth={1.2} opacity={0.7} />
+              ))}
+              {i < 2 ? <Path d={`M${x + 30} ${bottom - hgt + 16} H${x + 58} V${bottom - 20} H${x + 86}`} stroke={ink} strokeWidth={1.2} fill="none" opacity={0.6} /> : null}
+            </G>
+          );
+        })}
+      </G>
+    ),
+  },
+  {
+    id: 'zone-load', x: 30, y: 332, w: 215, h: 238, short: 'Loading Bay',
+    art: (z, ink) => (
+      <G>
+        {[0, 1, 2].map((i) => {
+          const x = z.x + 26 + i * 60;
+          const y = z.y + HEAD + 26;
+          return (
+            <G key={i}>
+              {/* tanker: cab + trailer */}
+              <Rect x={x + 6} y={y} width={30} height={22} rx={4} stroke={ink} strokeWidth={1.5} fill="none" />
+              <Rect x={x} y={y + 26} width={42} height={84} rx={8} stroke={ink} strokeWidth={sw} fill="none" />
+              <Line x1={x - 8} x2={x - 8} y1={y - 6} y2={y + 116} stroke={ink} strokeWidth={1} strokeDasharray="5 5" opacity={0.6} />
+            </G>
+          );
+        })}
+      </G>
+    ),
+  },
+  {
+    id: 'zone-ware', x: 260, y: 332, w: 215, h: 238, short: 'Warehouse',
+    art: (z, ink) => (
+      <G>
+        {[0, 1, 2, 3].map((i) => (
           <G key={i}>
-            <Rect x={395 + i * 100} y={150} width={60} height={80} rx={26} stroke={s} strokeWidth={2} fill="none" />
-            <Line x1={425 + i * 100} y1={150} x2={425 + i * 100} y2={135} stroke={s} strokeWidth={2} />
+            <Rect x={z.x + 24} y={z.y + HEAD + 24 + i * 30} width={z.w - 48} height={14} rx={2} stroke={ink} strokeWidth={1.5} fill="none" />
+            {[1, 2, 3, 4].map((k) => (
+              <Line key={k} x1={z.x + 24 + ((z.w - 48) / 5) * k} x2={z.x + 24 + ((z.w - 48) / 5) * k} y1={z.y + HEAD + 24 + i * 30} y2={z.y + HEAD + 38 + i * 30} stroke={ink} strokeWidth={1} opacity={0.6} />
+            ))}
           </G>
         ))}
       </G>
     ),
   },
   {
-    id: 'zone-dist', x: 640, y: 50, w: 320, h: 220, short: 'Distillation',
-    decor: (s) => (
+    id: 'zone-util', x: 490, y: 332, w: 200, h: 238, short: 'Utilities',
+    art: (z, ink) => (
       <G>
-        {[0, 1, 2].map((i) => (
-          <Rect key={i} x={690 + i * 85} y={120 - i * 8} width={34} height={130 + i * 8} rx={12} stroke={s} strokeWidth={2} fill="none" />
-        ))}
+        {/* boiler drum */}
+        <Rect x={z.x + 22} y={z.y + HEAD + 62} width={96} height={52} rx={26} stroke={ink} strokeWidth={sw} fill="none" />
+        <Circle cx={z.x + 48} cy={z.y + HEAD + 88} r={8} stroke={ink} strokeWidth={1.5} fill="none" opacity={0.7} />
+        {/* stack */}
+        <Path d={`M${z.x + 142} ${z.y + HEAD + 114} L${z.x + 147} ${z.y + HEAD + 22} H${z.x + 163} L${z.x + 168} ${z.y + HEAD + 114} Z`} stroke={ink} strokeWidth={sw} fill="none" />
+        <Path d={`M${z.x + 118} ${z.y + HEAD + 88} H${z.x + 143}`} stroke={ink} strokeWidth={1.5} />
       </G>
     ),
   },
   {
-    id: 'zone-load', x: 40, y: 350, w: 220, h: 250, short: 'Loading Bay',
-    decor: (s) => (
+    id: 'zone-etp', x: 705, y: 332, w: 265, h: 140, short: 'Effluent Treatment',
+    art: (z, ink) => (
       <G>
-        {[0, 1, 2].map((i) => (
-          <Rect key={i} x={70 + i * 62} y={470} width={44} height={100} rx={4} stroke={s} strokeWidth={2} fill="none" />
-        ))}
+        {[0, 1].map((i) => {
+          const cx = z.x + 150 + i * 62;
+          const cy = z.y + HEAD + 44;
+          return (
+            <G key={i}>
+              <Circle cx={cx} cy={cy} r={24} stroke={ink} strokeWidth={sw} fill="none" />
+              <Circle cx={cx} cy={cy} r={5} stroke={ink} strokeWidth={1.5} fill="none" />
+              <Line x1={cx} y1={cy} x2={cx + 24} y2={cy} stroke={ink} strokeWidth={1.5} />
+            </G>
+          );
+        })}
       </G>
     ),
   },
   {
-    id: 'zone-ware', x: 285, y: 350, w: 205, h: 250, short: 'Warehouse',
-    decor: (s) => (
-      <G>
-        <Path d="M310 570 V470 L387 440 L465 470 V570 Z" stroke={s} strokeWidth={2} fill="none" />
-        <Line x1={310} y1={520} x2={465} y2={520} stroke={s} strokeWidth={1.5} strokeDasharray="4 6" />
-      </G>
-    ),
-  },
-  {
-    id: 'zone-util', x: 515, y: 350, w: 180, h: 250, short: 'Utilities',
-    decor: (s) => (
-      <G>
-        <Rect x={540} y={480} width={90} height={90} rx={6} stroke={s} strokeWidth={2} fill="none" />
-        <Rect x={645} y={430} width={22} height={140} stroke={s} strokeWidth={2} fill="none" />
-      </G>
-    ),
-  },
-  {
-    id: 'zone-etp', x: 720, y: 350, w: 240, h: 150, short: 'Effluent Treatment',
-    decor: (s) => (
-      <G>
-        <Circle cx={790} cy={455} r={30} stroke={s} strokeWidth={2} fill="none" />
-        <Circle cx={880} cy={455} r={30} stroke={s} strokeWidth={2} fill="none" />
-      </G>
-    ),
-  },
-  {
-    id: 'zone-wksp', x: 720, y: 520, w: 240, h: 80, short: 'Workshop',
-    decor: (s) => <Path d="M745 585 H935" stroke={s} strokeWidth={2} strokeDasharray="10 6" />,
+    id: 'zone-wksp', x: 705, y: 486, w: 265, h: 84, short: 'Workshop',
+    art: () => null,
   },
 ];
+
+const headPath = (z: Zone) =>
+  `M${z.x} ${z.y + HEAD} V${z.y + R} Q${z.x} ${z.y} ${z.x + R} ${z.y} H${z.x + z.w - R} Q${z.x + z.w} ${z.y} ${z.x + z.w} ${z.y + R} V${z.y + HEAD} Z`;
 
 export function PlantHeatmap({
   risks, onZonePress, selectedAreaId, notMine,
@@ -118,74 +185,90 @@ export function PlantHeatmap({
     <View onLayout={onLayout} style={{ width: '100%', height: height || 280 }} accessibilityRole="image" accessibilityLabel="Plant X heatmap by highest open severity">
       {width > 0 ? (
         <Svg width={width} height={height} viewBox={`0 0 ${VB_W} ${VB_H}`}>
+          <Defs>
+            <Pattern id="grid" width={24} height={24} patternUnits="userSpaceOnUse">
+              <Circle cx={1} cy={1} r={1} fill={p.plantLine} opacity={0.55} />
+            </Pattern>
+          </Defs>
           <G fontFamily={SVG_FONT}>
-          {/* site boundary, road, pipe rack */}
-          <Rect x={10} y={20} width={980} height={605} rx={18} fill={p.sunken} stroke={p.plantLine} strokeWidth={2} />
-          <Rect x={10} y={290} width={980} height={42} fill={p.bg} opacity={0.6} />
-          <Line x1={20} y1={311} x2={980} y2={311} stroke={p.plantLine} strokeWidth={2} strokeDasharray="18 14" />
-          <SvgText x={500} y={306} fill={p.textFaint} fontSize={13} fontWeight="600" textAnchor="middle" letterSpacing={3}>
-            MAIN ROAD
-          </SvgText>
-          <Path d="M335 160 H355 M615 160 H635" stroke={p.plantLine} strokeWidth={6} strokeLinecap="round" />
-          {/* gate */}
-          <Rect x={0} y={296} width={22} height={30} fill={p.accent} rx={3} />
-          <SvgText x={30} y={350} fill={p.textFaint} fontSize={12} fontWeight="600">
-            GATE
-          </SvgText>
-          {/* north arrow */}
-          <G>
-            <Path d="M968 300 L976 322 L968 317 L960 322 Z" fill={p.textDim} />
-            <SvgText x={946} y={318} fill={p.textDim} fontSize={13} fontWeight="700" textAnchor="middle">
+            {/* site: plan sheet with dot grid, road, gate, pipe rack */}
+            <Rect x={6} y={6} width={VB_W - 12} height={VB_H - 12} rx={16} fill={p.sunken} stroke={p.border} strokeWidth={1.5} />
+            <Rect x={6} y={6} width={VB_W - 12} height={VB_H - 12} rx={16} fill="url(#grid)" />
+            <Rect x={7} y={274} width={VB_W - 14} height={44} fill={p.surface} />
+            <Line x1={7} y1={274} x2={VB_W - 7} y2={274} stroke={p.border} strokeWidth={1.5} />
+            <Line x1={7} y1={318} x2={VB_W - 7} y2={318} stroke={p.border} strokeWidth={1.5} />
+            <Line x1={70} y1={296} x2={900} y2={296} stroke={p.plantLine} strokeWidth={2} strokeDasharray="20 16" />
+            <Rect x={420} y={284} width={160} height={24} fill={p.surface} />
+            <SvgText x={500} y={301} fill={p.textFaint} fontSize={12} textAnchor="middle" letterSpacing={4}>
+              MAIN ROAD
+            </SvgText>
+            <Rect x={6} y={282} width={10} height={28} rx={2} fill={p.accent} />
+            <SvgText x={24} y={301} fill={p.textDim} fontSize={12} letterSpacing={2}>
+              GATE
+            </SvgText>
+            <Path d="M958 285 L966 307 L958 302 L950 307 Z" fill={p.textDim} />
+            <SvgText x={938} y={301} fill={p.textDim} fontSize={12} textAnchor="middle">
               N
             </SvgText>
-          </G>
+            {/* process line: tank farm → reactors → distillation */}
+            <Path d="M330 150 H350 M620 150 H640" stroke={p.plantLine} strokeWidth={5} strokeLinecap="round" />
 
-          {ZONES.map((z) => {
-            const r = byZone.get(z.id);
-            const outOfScope = r ? notMine?.has(r.area.id) : false;
-            const level = r?.level ?? 'none';
-            const c = severityColors(p, level);
-            const fill = outOfScope ? p.raised : level === 'none' ? p.zoneNone : c.fill;
-            const ink = outOfScope ? p.textFaint : level === 'none' ? p.text : c.on;
-            const selected = r && selectedAreaId === r.area.id;
-            const label = r?.area.name ?? z.short;
-            return (
-              <G key={z.id}>
-                <Rect
-                  x={z.x}
-                  y={z.y}
-                  width={z.w}
-                  height={z.h}
-                  rx={12}
-                  fill={fill}
-                  stroke={selected ? p.accent : level === 'none' && !outOfScope ? p.clear : p.bg}
-                  strokeWidth={selected ? 6 : 3}
-                  strokeDasharray={outOfScope ? '8 8' : undefined}
-                />
-                {z.decor(outOfScope ? p.border : level === 'none' ? p.plantLine : ink)}
-                <SvgText x={z.x + 16} y={z.y + 32} fill={ink} fontSize={z.w < 200 ? 18 : 20} fontWeight="700">
-                  {label.length * (z.w < 200 ? 10 : 11) > z.w - 28 ? z.short : label}
-                </SvgText>
-                {outOfScope ? (
-                  <SvgText x={z.x + 16} y={z.y + 56} fill={ink} fontSize={14}>
-                    Other supervisor
+            {ZONES.map((z) => {
+              const r = byZone.get(z.id);
+              const outOfScope = r ? !!notMine?.has(r.area.id) : false;
+              const level = outOfScope ? 'none' : (r?.level ?? 'none');
+              const c = severityColors(p, level);
+              const clear = level === 'none';
+              const selected = !!r && selectedAreaId === r.area.id;
+              const fullName = r?.area.name ?? z.short;
+              const hasCount = !!r && r.openCount > 0 && !outOfScope;
+              const room = z.w - 28 - (hasCount ? 44 : 0);
+              const name = fullName.length * 10.5 > room ? z.short : fullName;
+
+              // Clear zones stay quiet (dark, thin green edge) so hazards stand out.
+              const bodyFill = outOfScope ? p.surface : clear ? p.surface : c.soft;
+              const edge = outOfScope ? p.plantLine : c.fill;
+              const headFill = outOfScope ? p.raised : clear ? p.clearSoft : c.fill;
+              const headInk = outOfScope ? p.textFaint : clear ? p.text : c.on;
+              const artInk = outOfScope ? p.plantLine : clear ? p.plantLine : c.fill;
+
+              return (
+                <G key={z.id}>
+                  <Rect x={z.x} y={z.y} width={z.w} height={z.h} rx={R} fill={bodyFill} />
+                  <Path d={headPath(z)} fill={headFill} />
+                  {z.art(z, artInk)}
+                  <Rect
+                    x={z.x}
+                    y={z.y}
+                    width={z.w}
+                    height={z.h}
+                    rx={R}
+                    fill="none"
+                    stroke={selected ? p.accent : edge}
+                    strokeWidth={selected ? 5 : clear || outOfScope ? 1.5 : 3}
+                    strokeDasharray={outOfScope ? '8 7' : undefined}
+                  />
+                  <SvgText x={z.x + 14} y={z.y + 27} fill={headInk} fontSize={18} fontWeight="700">
+                    {name}
                   </SvgText>
-                ) : r && r.openCount > 0 ? (
-                  <G>
-                    <Rect x={z.x + 14} y={z.y + 44} width={z.w < 200 ? 120 : 148} height={30} rx={15} fill={p.bg} opacity={0.88} />
-                    <SvgText x={z.x + 28} y={z.y + 65} fill={p.text} fontSize={16} fontWeight="700">
-                      {level !== 'none' ? `${SEVERITY_GLYPH[level]} ` : ''}
-                      {r.openCount} open
-                    </SvgText>
-                  </G>
-                ) : (
-                  <SvgText x={z.x + 16} y={z.y + 58} fill={ink} fontSize={15} fontWeight="600">
-                    ✓ Clear
+                  {hasCount ? (
+                    <G>
+                      <Rect x={z.x + z.w - 46} y={z.y + 8} width={36} height={24} rx={12} fill={p.bg} opacity={0.9} />
+                      <SvgText x={z.x + z.w - 28} y={z.y + 26} fill={p.text} fontSize={16} fontWeight="700" textAnchor="middle">
+                        {r!.openCount}
+                      </SvgText>
+                    </G>
+                  ) : null}
+                  <SvgText x={z.x + 14} y={z.y + z.h - 14} fill={outOfScope ? p.textFaint : clear ? p.clear : p.text} fontSize={14} fontWeight="600">
+                    {outOfScope
+                      ? 'Other supervisor'
+                      : clear
+                        ? '✓ Nothing open'
+                        : `${SEVERITY_GLYPH[level]} ${level} · ${r!.openCount} open`}
                   </SvgText>
-                )}
-              </G>
-            );
-          })}
+                </G>
+              );
+            })}
           </G>
         </Svg>
       ) : null}
@@ -202,8 +285,8 @@ export function PlantHeatmap({
                 accessibilityLabel={`${r.area.name}: ${r.openCount} open, highest ${r.level === 'none' ? 'none' : r.level}. Open area.`}
                 onPress={() => onZonePress(r.area.id)}
                 style={({ hovered }: { pressed: boolean; hovered?: boolean }) => ({
-                  position: 'absolute', left: z.x * k, top: z.y * k, width: z.w * k, height: z.h * k, borderRadius: 12 * k,
-                  backgroundColor: hovered ? 'rgba(255,255,255,0.08)' : 'transparent',
+                  position: 'absolute', left: z.x * k, top: z.y * k, width: z.w * k, height: z.h * k, borderRadius: R * k,
+                  backgroundColor: hovered ? 'rgba(255,255,255,0.07)' : 'transparent',
                 })}
               />
             );

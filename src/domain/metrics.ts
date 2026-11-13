@@ -290,3 +290,148 @@ export function closureBySeverity(items: Item[]) {
   }
   return out;
 }
+
+// ═══ Added for the severity-coded dashboard ═════════════════════════════════
+// Every chart splits by severity so colour always means the same thing.
+
+export type SevCounts = Record<Severity, number>;
+export const emptySev = (): SevCounts => ({ High: 0, Medium: 0, Low: 0 });
+
+export interface SevVolumeRow {
+  bucket: Bucket;
+  sev: SevCounts;
+  total: number;
+}
+
+/** Reports per period, split High / Medium / Low (Unclassified counts as Medium). */
+export function volumeBySeverity(filtered: Item[], window: WindowFilter, now: Date): SevVolumeRow[] {
+  return buckets(window, now).map((bucket) => {
+    const sev = emptySev();
+    for (const i of filtered) if (inBucket(t(i.report.created_at), bucket)) sev[effSeverity(i)] += 1;
+    return { bucket, sev, total: sev.High + sev.Medium + sev.Low };
+  });
+}
+
+export interface SevSpeedRow {
+  bucket: Bucket;
+  median: Record<Severity, number | null>; // median hours to close, by severity
+  closed: number;
+}
+
+/** Median time to close per period, one value per severity. */
+export function speedBySeverity(filtered: Item[], window: WindowFilter, now: Date): SevSpeedRow[] {
+  return buckets(window, now).map((bucket) => {
+    const closedHere = filtered.filter((i) => i.action.closed_at && inBucket(t(i.action.closed_at), bucket));
+    const median_ = {} as Record<Severity, number | null>;
+    for (const s of ['High', 'Medium', 'Low'] as Severity[]) median_[s] = median(closedHere.filter((i) => effSeverity(i) === s).map(closeHours));
+    return { bucket, median: median_, closed: closedHere.length };
+  });
+}
+
+/** Reports per shift, split by severity: which shift needs attention. */
+export function shiftMix(filtered: Item[]): { shift: Shift; sev: SevCounts; total: number }[] {
+  return (['A', 'B', 'C'] as Shift[]).map((shift) => {
+    const sev = emptySev();
+    for (const i of filtered) if (i.report.shift === shift) sev[effSeverity(i)] += 1;
+    return { shift, sev, total: sev.High + sev.Medium + sev.Low };
+  });
+}
+
+/** Reports per hazard type, split by severity, biggest first. */
+export function categoryMix(filtered: Item[]): { category: Category; sev: SevCounts; total: number }[] {
+  return CATEGORIES.map((category) => {
+    const sev = emptySev();
+    for (const i of filtered) if ((i.report.category ?? 'Other') === category) sev[effSeverity(i)] += 1;
+    return { category, sev, total: sev.High + sev.Medium + sev.Low };
+  })
+    .filter((r) => r.total > 0)
+    .sort((a, b) => b.total - a.total);
+}
+
+/** Workload per owner: open, overdue and severity of what they hold (EHS view). */
+export interface OwnerLoad {
+  ownerId: string;
+  open: number;
+  overdue: number;
+  sev: SevCounts;
+  oldestOpenHours: number | null;
+}
+export function ownerLoad(items: Item[], now: Date): OwnerLoad[] {
+  const map = new Map<string, OwnerLoad>();
+  for (const i of items) {
+    if (isMerged(i) || !isOpen(i) || !i.action.owner_id) continue;
+    const o = map.get(i.action.owner_id) ?? { ownerId: i.action.owner_id, open: 0, overdue: 0, sev: emptySev(), oldestOpenHours: null };
+    o.open += 1;
+    o.sev[effSeverity(i)] += 1;
+    if (isBreached(i, now)) o.overdue += 1;
+    const age = (now.getTime() - t(i.report.created_at)) / HOUR;
+    o.oldestOpenHours = o.oldestOpenHours == null ? age : Math.max(o.oldestOpenHours, age);
+    map.set(i.action.owner_id, o);
+  }
+  return [...map.values()].sort((a, b) => b.overdue - a.overdue || b.open - a.open);
+}
+
+/** Median minutes from "reported" to "assigned": how quickly new reports are picked up. */
+export function timeToAssignMinutes(filtered: Item[]): { median: number | null; count: number } {
+  const mins = filtered.filter((i) => i.action.assigned_at).map((i) => (t(i.action.assigned_at) - t(i.report.created_at)) / 60_000).filter((m) => m >= 0);
+  return { median: median(mins), count: mins.length };
+}
+
+/** Share of reports raised by contractors, and reports not yet triaged. */
+export function reporterMix(filtered: Item[], contractorIds: Set<string>) {
+  const total = filtered.length;
+  const contractor = filtered.filter((i) => contractorIds.has(i.report.user_id)).length;
+  return { total, contractor, share: total ? contractor / total : null };
+}
+
+export type AttentionReason = 'high' | 'overdue' | 'escalated' | 'untriaged' | 'review' | 'duplicate';
+export interface AttentionItem {
+  item: Item;
+  reasons: AttentionReason[];
+  score: number;
+}
+
+/** What needs a person now, most urgent first: High severity always leads, then overdue, escalated, new, low-confidence AI. */
+export function attention(items: Item[], now: Date, limit = 6): AttentionItem[] {
+  const out: AttentionItem[] = [];
+  for (const it of items) {
+    if (isMerged(it) || !isOpen(it)) continue;
+    const reasons: AttentionReason[] = [];
+    let score = 0;
+    if (it.report.severity === 'High') { reasons.push('high'); score += 200; }
+    if (isBreached(it, now)) { reasons.push('overdue'); score += 80; }
+    if (it.action.escalated_level > 0) { reasons.push('escalated'); score += 40; }
+    if (it.action.status === 'New') { reasons.push('untriaged'); score += 25; }
+    if (it.report.needs_review && it.action.status === 'New') { reasons.push('review'); score += 10; }
+    if (it.report.duplicate_status === 'suggested') { reasons.push('duplicate'); score += 5; }
+    if (!reasons.length) continue;
+    // Within a tier, the one closest to (or past) its due time first.
+    score += Math.max(0, 20 - (t(it.action.due_at) - now.getTime()) / HOUR / 3);
+    out.push({ item: it, reasons, score });
+  }
+  return out.sort((a, b) => b.score - a.score).slice(0, limit);
+}
+
+/** The plant's state in one sentence's worth of facts. */
+export function plantStatus(items: Item[], areas: AreaRow[], now: Date) {
+  const live = items.filter((i) => !isMerged(i) && isOpen(i));
+  const high = live.filter((i) => i.report.severity === 'High');
+  const overdue = live.filter((i) => isBreached(i, now));
+  const areaName = (id: number) => areas.find((a) => a.id === id)?.name ?? 'the plant';
+  return {
+    highCount: high.length,
+    highAreas: [...new Set(high.map((i) => areaName(i.report.area_id)))],
+    overdueCount: overdue.length,
+    openCount: live.length,
+  };
+}
+
+export function oldestOpen(items: Item[], now: Date): { item: Item; hours: number } | null {
+  let best: { item: Item; hours: number } | null = null;
+  for (const i of items) {
+    if (isMerged(i) || !isOpen(i)) continue;
+    const h = (now.getTime() - t(i.report.created_at)) / HOUR;
+    if (!best || h > best.hours) best = { item: i, hours: h };
+  }
+  return best;
+}
